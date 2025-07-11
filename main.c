@@ -1,6 +1,22 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <string.h>
+#ifdef _WIN32
+#include <windows.h>
+void set_console() {
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    DWORD dwMode = 0;
+
+    if (hOut == INVALID_HANDLE_VALUE) return;
+    if (!GetConsoleMode(hOut, &dwMode)) return;
+
+    dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+    SetConsoleMode(hOut, dwMode);
+}
+#else
+void set_console() {}
+#endif
 
 #define ANSI_RESET_ALL          "\x1b[0m"
 
@@ -28,22 +44,6 @@
 
 #define NONE_PLACEHOLDER		"<none>"
 
-#ifdef _WIN32
-#include <windows.h>
-void set_console() {
-    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
-    DWORD dwMode = 0;
-
-    if (hOut == INVALID_HANDLE_VALUE) return;
-    if (!GetConsoleMode(hOut, &dwMode)) return;
-
-    dwMode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
-    SetConsoleMode(hOut, dwMode);
-}
-#else
-void set_console() {}
-#endif
-
 typedef enum Command {
 	CMD_HELP,
 	CMD_VERSION,
@@ -54,6 +54,7 @@ typedef enum Command {
 } Command;
 
 typedef struct {
+	int version;
     char default_branch[255];
     char initials[16];
     char repository_name[100];
@@ -65,29 +66,21 @@ typedef struct {
 
 char path[512];
 char name[255];
-Config cfg = {
-	.default_branch = "",
-	.initials = "",
-	.repository_name = "",
-	.branch_format = "b1.0-%i-%n",
-	.commit_format = "",
-	.ticket = -1,
-	.timer = -1
-};
+Config cfg = {0};
 
 int help() {
 	printf(
-		"usage: %s [-v | --version] [-h | --help] <command> [<args>]\n"
+		ANSI_RESET_ALL ANSI_STYLE_BOLD"usage: %s [-v | --version] [-h | --help] <command> [<args>]\n"ANSI_RESET_ALL
 		"\n"
-		"commands:\n"
-		"   -h, --help                 Show this help message\n"
-		"   -v, --version              Show version information\n"
-		"   config                     Show or set the configuration for the current user.\n"
-		"   new                        Creates a new branch using the ticket number, by checking out\n"
-		"                              the current branch and creating a new one.\n"
-		"   commit                     Commits any changes made to the repository, using the message\n"
-		"                              content and recorded time.\n"
-		"   setformat                  Sets the format for the branch name or commit message.\n",
+		ANSI_STYLE_BOLD"commands:\n"ANSI_RESET_ALL
+		"    -h, --help                 Show this help message\n"
+		"    -v, --version              Show version information\n"
+		"    config                     Show or set the configuration for the current user.\n"
+		"    new <ticket>               Creates a new branch using the ticket number, by checking out\n"
+		"                               the current branch and creating a new one.\n"
+		"    commit <message>           Commits any changes made to the repository, using the message\n"
+		"                               content and recorded time.\n"
+		"    setformat                  Sets the format for the branch name or commit message.\n",
 		name
 	);
 	return 0;
@@ -95,13 +88,16 @@ int help() {
 
 int help_new() {
 	printf(
-		"usage: %s new <ticket number>\n"
+		ANSI_RESET_ALL ANSI_STYLE_BOLD"usage: %s new <ticket>\n"ANSI_RESET_ALL
 		"\n"
-		"description: Creates a new branch using the ticket number, by checking out the\n"
+		ANSI_STYLE_BOLD"description: "ANSI_RESET_ALL"Creates a new branch using the ticket number, by checking out the\n"
 		"current branch and creating a new one.\n"
 		"\n"
-		"options:\n"
-		"   -h, --help                 Show this help message\n",
+		ANSI_STYLE_BOLD"options:\n"ANSI_RESET_ALL
+		"    -h, --help                 Show this help message\n"
+		"\n"
+		ANSI_STYLE_BOLD"arguments:\n"ANSI_RESET_ALL
+		"    <ticket>: The ticket number.\n",
 		name
 	);
 	return 0;
@@ -109,25 +105,31 @@ int help_new() {
 
 int help_config() {
 	printf(
-		"usage: %s config\n"
+		ANSI_RESET_ALL ANSI_STYLE_BOLD"usage: %s config\n"ANSI_RESET_ALL
 		"\n"
-		"description: Show or set the configuration for the current user.\n"
+		ANSI_STYLE_BOLD"description: "ANSI_RESET_ALL"Show or set the configuration for the current user.\n"
 		"\n"
-		"options:\n"
-		"   -h, --help                 Show this help message\n"
+		ANSI_STYLE_BOLD"options:\n"ANSI_RESET_ALL
+		"    -h, --help                 Show this help message\n"
+		"    -r, --reset                Reset all configuration\n"
 		"\n"
-		"configuration options:\n"
-		"   Default Branch             The default branch to checkout before creating a new branch.\n"
-		"   Initials                   The initials of your name to use in branch names and commit messages.\n"
-		"   Repository Name            The name of the repository, used in branch names.\n",
+		ANSI_STYLE_BOLD"configuration options:\n"ANSI_RESET_ALL
+		"    Default Branch             The default branch to checkout before creating a new branch.\n"
+		"    Initials                   The initials of your name to use in branch names and commit messages.\n"
+		"    Repository Name            The name of the repository, used in branch names.\n",
 		name
 	);
 	return 0;
 }
 
 int version() {
-	printf("TicketBranch version 1.0.0\n");
-	printf("Author: GoldenD60 / David Skillman\n");
+	printf("%sTicketBranch v1.0.0\n"
+	       "%sAuthor: GoldenD60 / David Skillman\n"
+		   "%shttps://github.com/GoldenD60/TicketBranch%s",
+			ANSI_STYLE_BOLD,
+			ANSI_RESET_ALL ANSI_STYLE_ITALIC,
+			ANSI_RESET_ALL ANSI_STYLE_UNDERLINE,
+			ANSI_RESET_ALL);
 	return 0;
 }
 
@@ -140,9 +142,31 @@ void save_config() {
 int load_config() {
     FILE *f = fopen(path, "rb");
     if (!f) return 0;
-    fread(&cfg, sizeof(cfg), 1, f);
+
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    rewind(f);
+
+    if (size != sizeof(Config)) {
+		fclose(f);
+		return 0;
+	}
+	if (fread(&cfg, sizeof(cfg), 1, f) != 1) {
     fclose(f);
-    return 1;
+		printf(ANSI_COLOR_RED ANSI_STYLE_BOLD"Failed to read config file (partial read).\n"ANSI_RESET_ALL);
+		return 0;
+	}
+
+	if (cfg.version != 1) {
+		printf(ANSI_COLOR_RED ANSI_STYLE_BOLD"Config version mismatch or corruption.\n"ANSI_RESET_ALL);
+		return 0;
+	}
+
+	fclose(f);
+
+	// Check version
+	if (cfg.version != 1) return 0;
+	return 1;
 }
 
 void format(
@@ -207,6 +231,16 @@ void format_cfg(const char *fmt, char *out, char *message, char *branch) {
 	);
 }
 
+int ask() {
+    char answer = '\0';
+    while (answer != 'y' && answer != 'n') {
+        answer = getchar();
+        while (getchar() != '\n');
+        answer = tolower(answer);
+    }
+    return answer == 'y';
+}
+
 int config() {
 	printf("Leave empty to not change.\n");
 
@@ -215,33 +249,33 @@ int config() {
 	char default_branch[255];
 
 	printf("Default branch: ");
-	scanf("%[^\n]", default_branch);
-	getchar();
+	fgets(default_branch, sizeof(default_branch), stdin);
+	default_branch[strcspn(default_branch, "\n")] = 0;
 
 	if (default_branch[0] != '\0')
-		memcpy(cfg.default_branch, default_branch, sizeof(cfg.default_branch));
+		strncpy(cfg.default_branch, default_branch, sizeof(cfg.default_branch));
 
 	printf("\nYour initials are: %s\n", cfg.initials[0] ? cfg.initials : NONE_PLACEHOLDER);
 
 	char initials[16];
 
 	printf("Initials: ");
-	scanf("%[^\n]", initials);
-	getchar();
+	fgets(initials, sizeof(initials), stdin);
+	initials[strcspn(initials, "\n")] = 0;
 
 	if (initials[0] != '\0')
-		memcpy(cfg.initials, initials, sizeof(cfg.initials));
+		strncpy(cfg.initials, initials, sizeof(cfg.initials));
 
 	printf("\nThe repository name is: %s\n", cfg.repository_name[0] ? cfg.repository_name : NONE_PLACEHOLDER);
 
 	char repository_name[100];
 	
 	printf("Repository Name: ");
-	scanf("%[^\n]", repository_name);
-	getchar();
+	fgets(repository_name, sizeof(repository_name), stdin);
+	repository_name[strcspn(repository_name, "\n")] = 0;
 
 	if (repository_name[0] != '\0')
-		memcpy(cfg.repository_name, repository_name, sizeof(cfg.repository_name));
+		strncpy(cfg.repository_name, repository_name, sizeof(cfg.repository_name));
 
 	save_config();
 	return 0;
@@ -251,14 +285,29 @@ int new(char ticket[8])
 {
 	char new_branch[255];
 	
-	memcpy(cfg.ticket, ticket, sizeof(cfg.ticket));
+	strncpy(cfg.ticket, ticket, sizeof(cfg.ticket));
 	format_cfg(cfg.branch_format, new_branch, NONE_PLACEHOLDER, NONE_PLACEHOLDER);
+
+	printf("Will checkout branch %s and create new branch %s.\nIs this OK? (Y/n) ", cfg.default_branch, new_branch);
+	if (!ask()) {
+		printf(ANSI_COLOR_RED ANSI_STYLE_BOLD "Cancelled" ANSI_RESET_ALL);
+		return 1;
+	}
+
 	printf("git fetch\n");
 	printf("git checkout %s\n", cfg.default_branch);
 	printf("git checkout -b %s\n", new_branch);
 
 	save_config();
 	return 0;
+}
+
+void set_default_config() {
+	memset(&cfg, 0, sizeof(cfg));
+	cfg.version = 1;
+	strcpy(cfg.branch_format, "b1.0-%i-%n");
+	cfg.timer = -1;
+	save_config();
 }
 
 int main(int argc, char **argv)
@@ -273,11 +322,10 @@ int main(int argc, char **argv)
     snprintf(path, sizeof(path), "%s/.tb_config", home);
 
 	if (!load_config()) {
-        save_config();
+		set_default_config();
     }
 
-	memcpy(name, argv[0], sizeof(name));
-
+	strncpy(name, argv[0], sizeof(name));
 	if (argc > 1) {
 		if (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")) {
 			return help();
@@ -288,44 +336,48 @@ int main(int argc, char **argv)
 		}
 		else if (!strcmp(argv[1], "config"))
 		{
-			if (!strcmp(argv[2], "-h") || !strcmp(argv[2], "--help"))
-			{
-				printf(ANSI_RESET_ALL);
-				return help_config();
+			if (argc > 2) {
+				if (!strcmp(argv[2], "-h") || !strcmp(argv[2], "--help"))
+				{
+					return help_config();
+				}
+				else if (!strcmp(argv[2], "-r") || !strcmp(argv[2], "--reset")) {
+					set_default_config();
+					printf(ANSI_COLOR_YELLOW "Configuration has been reset to defaults.\n" ANSI_RESET_ALL);
+					return 0;
+				}
 			}
 			return config();
 		}
 		else if (!strcmp(argv[1], "new"))
 		{
-			printf(ANSI_COLOR_RED);
-			printf(ANSI_STYLE_BOLD);
+			printf(ANSI_COLOR_RED ANSI_STYLE_BOLD);
+			
 			if (argc < 3) {
 				printf("Ticket number required\n");
-				printf(ANSI_RESET_ALL);
 				return help_new();
 			}
 			if (!strcmp(argv[2], "-h") || !strcmp(argv[2], "--help"))
 			{
-				printf(ANSI_RESET_ALL);
 				return help_new();
 			}
-			if (cfg.initials[0] == '\0') {
-				printf("You need to set your initials in the configuration\n");
-				printf(ANSI_RESET_ALL);
-				return 1;
-			}
-			if (cfg.default_branch[0] == '\0') {
-				printf("You need to set the default branch in the configuration\n");
-				printf(ANSI_RESET_ALL);
-				return 1;
-			}
-			if (cfg.branch_format[0] == '\0') {
-				printf("You need to set the branch format in the format configuration\n");
-				printf(ANSI_RESET_ALL);
-				return 1;
-			}
 
+			int err = 0;
+			if (!strcmp(cfg.initials, "")) {
+				printf("You need to set your initials in the configuration\n");
+				err = 1;
+			}
+			if (!strcmp(cfg.default_branch, "")) {
+				printf("You need to set the default branch in the configuration\n");
+				err = 1;
+			}
+			if (!strcmp(cfg.branch_format, "")) {
+				printf("You need to set the branch format in the format configuration\n");
+				err = 1;
+			}
 			printf(ANSI_RESET_ALL);
+
+			if (err) return err;
 			return new(argv[2]);
 		}
 		else if (!strcmp(argv[1], "commit"))
@@ -337,9 +389,6 @@ int main(int argc, char **argv)
 			return 0;
 		}
 	}
-	printf(ANSI_COLOR_RED);
-	printf(ANSI_STYLE_BOLD);
-	printf("Invalid command\n");
-	printf(ANSI_RESET_ALL);
+	printf(ANSI_COLOR_RED ANSI_STYLE_BOLD"Invalid command\n");
 	return help();
 }
