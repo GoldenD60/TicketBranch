@@ -437,7 +437,7 @@ void set_default_config() {
 	memset(&cfg, 0, sizeof(cfg));
 	cfg.version = 1;
 	strncpy(cfg.branch_format, "ticket-%n", sizeof(cfg.branch_format));
-	strncpy(cfg.commit_format, "[%n] %i: %m", sizeof(cfg.commit_format));
+	strncpy(cfg.commit_format, "[%n:%tm] %i: %m", sizeof(cfg.commit_format));
 	save_config();
 }
 
