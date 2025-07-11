@@ -320,8 +320,26 @@ int config() {
 	return 0;
 }
 
-int git(char *command) {
-	system(command);
+int cmd(char *command, char* out) {
+	char buffer[128];
+#ifdef _WIN32
+    FILE *fp = _popen(command, "r");
+#else
+    FILE *fp = popen(command, "r");
+#endif
+    if (fp == NULL) {
+        perror("popen failed");
+        return 1;
+    }
+
+    while (fgets(buffer, sizeof(buffer), fp) != NULL)
+		strcpy(out, buffer);
+
+#ifdef _WIN32
+    _pclose(fp);
+#else
+    pclose(fp);
+#endif
 	return 0;
 }
 
@@ -341,13 +359,13 @@ int new(char ticket[8])
 	char command[1024] = "";
 
 	sprintf(command, "git fetch\n");
-	git(command);
+	cmd(command, NULL);
 
 	sprintf(command, "git checkout %s\n", cfg.default_branch);
-	git(command);
+	cmd(command, NULL);
 
 	sprintf(command, "git checkout -b %s\n", new_branch);
-	git(command);
+	cmd(command, NULL);
 
 	cfg.timer = time(NULL);
 	save_config();
@@ -387,7 +405,7 @@ int commit(int argc, char **argv) {
 
 	char command[1024] = "";
 	sprintf(command, "git commit %s -m \"%s\"\n", flagstr, message);
-	git(command);
+	cmd(command, NULL);
 	free(flagstr);
 
 	return 0;
@@ -444,13 +462,10 @@ void set_default_config() {
 int main(int argc, char **argv)
 {
 	set_console();
-#ifdef _WIN32
-    const char *home = getenv("USERPROFILE");
-#else
-    const char *home = getenv("HOME");
-#endif
-    if (!home) home = "."; // fallback
+    char home[128] = ".";
+	//cmd("git rev-parse --show-toplevel", home);
     snprintf(path, sizeof(path), "%s/.tb_config", home);
+	printf("%s", path);
 
 	if (!load_config()) {
 		set_default_config();
